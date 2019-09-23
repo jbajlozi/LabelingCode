@@ -1,20 +1,32 @@
 clear; close all; %clc;
 cd '~';
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% CHANGE HERE %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-Days_labeling = {[], [], [], [21], [], [], [], [], [], [], [], []}; %What sessions you want to look at
+Days_labeling = {[1], [], [], [], [], [], [], [], [], [], [], []}; %What sessions you want to look at
 path_orig = '/Users/joanibajlozi/Desktop/P4 bank of data- wo videos'; %Path to P4 bank of data- wo videos
 
 predictedLabels = false;%Run with true to get predicted labels
 testLabels = true; %Run with true to have the lines you created display on the graph
+testLabels_time = false; %Run with true to use video time as labels
+testLabels_time_inv = false;
 
-startIndex = 2201; %What sample number you think the person started brushing
-endIndex = 6367; %What sample number you think the person finished brushing
+startIndex = 190; %What sample number you think the person started brushing
+endIndex = 2690; %What sample number you think the person finished brushing
+
+accgraph = false;
+maggraph = false;
+gyrgraph = false;
+
+%Enter your observed time stamp, actual sample position, and freq accuracy
+time_stamp = [0.17 0.22 0.29];
+act_samp = [464 591 762];
+freq_acc = .01;
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% DO NOT CHANGE BELOW HERE %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %% Intitialization
 ids = [1:12];
 participant_names = {'Nirmit', 'Nicole', 'Matt', 'Lewis', 'Denise', ...
     'Niloufar', 'Nicole Lin', 'Gracie', 'Hannah', 'Guiselle', 'Anika', 'Amorette'}; 
+
 %% Global Final Variables
 SEQUENTIAL = true;
 FREESTYLE = false;
@@ -25,8 +37,7 @@ SampRate = 23;
 %% Getting data 
 
 for f = 1:length(ids)    
-    path_part = strcat(path_orig, '/Participant', {' '}, num2str(ids(f)),  {' - '}, ...
-        participant_names(ids(f)));
+    path_part = strcat(path_orig, '/Participant', {' '}, num2str(ids(f)),  {' - '}, participant_names(ids(f)));
     path_part = path_part{1};
     for g = 1:length(Days_labeling{ids(f)})
         dirpath_part = dir(path_part);
@@ -407,62 +418,157 @@ for f = 1:length(ids)
             
             predictedLabels
         end
-%% Plot 
+
+
+ %% Frequency Finder
+    time_log = 0;
+    minSDS = 10000;
+    first_diff = 0;
+    if testLabels_time
+        [lineInd, region_names_new, time_log] = DaytolineIndandReg(Days_labeling{ids(f)}(g) , ids(f));
+        lineInd = floor(lineInd);
+    end
+
+    for freq = 20 : freq_acc : 30
+        curSDS = 0; %current sum of distance squared
+        for r = 1 : length(time_stamp)
+            %convert time in dec to time in seconds 
+            t = time_stamp(r);
+            time_int = 100 * t; 
+            raw_t = mod(time_int,100) + (time_int - mod(time_int,100))/100 * 60;
+
+            %calculate first one's diff
+            if(r == 1)
+                first_diff = act_samp(r) - raw_t * freq;
+            end
+
+            %Actual position - (Expected + first one's diff)
+            EA_diff = act_samp(r) - (raw_t * freq + first_diff);
+            curSDS = curSDS + EA_diff^2;
+        end
+
+        %update current sum dist squared, store optimal offset and freq
+        if(curSDS <= minSDS)
+            minSDS = curSDS;
+            opt_offset = first_diff;
+            opt_f = freq;
+        end
+    end
+
+    fprintf('Frequency and offset: %d, %d\n', opt_f, (opt_offset));
+    %declare predicted time sample array with zeros
+    pred_t_samp = zeros(1, length(time_log));
+
+    for r_1 = 1:length(time_log)
+        %convert time in dec to time in seconds 
+        t = time_log(r_1);
+        time_int = 100 * t; 
+        raw_t = mod(time_int,100) + (time_int - mod(time_int,100))/100 * 60;
+
+        %calculate expected sample position
+        %store value in predicted sample position
+        expected_samp_pos = ((raw_t * opt_f ) + opt_offset );
+        pred_t_samp(r_1) = expected_samp_pos;
+    end
+ %% Time Inv
+ if testLabels_time_inv
+   for r_2 = 1: length(lineInd)
+       time_inv    = (lineInd(r_2) - opt_offset )/opt_f/60;
+       samp_inv    = mod(time_inv,1)*0.6 + (time_inv - mod(time_inv,1));
+       reg_inv     = string(region_names_new(r_2));
+       format short
+       fprintf('%.2f, %s\n', samp_inv,reg_inv);
+   end
+end
+   
+%% Plot
 
     color = cell(1, 16);
     color(:) = {'k'};
 
-    figure('NumberTitle', 'off', 'Name', 'Accelerometer');
-    hold on;
-    plot(acc(:,1), 'r');
-    plot(acc(:,2), 'g');
-    plot(acc(:,3), 'b');
-    xlabel('sample');
-    ylabel('g');
-    title(strcat('Participant-', int2str(f), ' , Day-', int2str(Days_labeling{ids(f)}(g))));
-    legend('X', 'Y', 'Z');
-
-    if predictedLabels
-        vline(predictedLabels, color);
-    end
-    if testLabels
-        vline(lineInd,'r', region_names_new);
-    end
-
-    figure('NumberTitle', 'off', 'Name', 'Gyroscope');
-    hold on;
-    plot(gyr(:,1), 'r');
-    plot(gyr(:,2), 'g');
-    plot(gyr(:,3), 'b');
-    xlabel('sample');
-    ylabel('degPersec');
-    title(strcat('Participant-', int2str(f), ' , Day-', int2str(Days_labeling{ids(f)}(g))));
-    legend('X', 'Y', 'Z');
-
-    if predictedLabels
-        vline(predictedLabels, color);
-    end
-    if testLabels
-        vline(lineInd,'r', region_names_new);
-    end
-
-    figure('NumberTitle', 'off', 'Name', 'Raw Magnetometer');
-    hold on;
-    plot(mag(:,1), 'r');
-    plot(mag(:,2), 'g');
-    plot(mag(:,3), 'b');
-    xlabel('sample');
-    ylabel('wb/m2');
-    title(strcat('Participant-', int2str(f), ' , Day-', int2str(Days_labeling{ids(f)}(g))));
-    legend('X', 'Y', 'Z');
+    if accgraph == true
     
-    
-    if predictedLabels
-        vline(predictedLabels, color);
-    end
-    if testLabels
-        vline(lineInd,'r', region_names_new);
-    end
+        figure('NumberTitle', 'off', 'Name', 'Accelerometer');
+        hold on;
+        plot(acc(:,1), 'r');
+        plot(acc(:,2), 'g');
+        plot(acc(:,3), 'b');
+        xlabel('sample');
+        ylabel('g');
+        title(strcat('Participant-', int2str(f), ' , Day-', int2str(Days_labeling{ids(f)}(g))));
+        legend('X', 'Y', 'Z');
+
+        %Show the predicted labels
+        if predictedLabels
+            vline(predictedLabels, color);
+        end 
+        %show the test labels
+        if testLabels
+            vline(lineInd,'r', region_names_new);
+        end
+        %Show Dean test labels
+        if testLabels_time
+            vline(pred_t_samp ,'c', region_names_new);
+        end
         
     end
+    
+    
+    if gyrgraph == true
+
+        figure('NumberTitle', 'off', 'Name', 'Gyroscope');
+        hold on;
+        plot(gyr(:,1), 'r');
+        plot(gyr(:,2), 'g');
+        plot(gyr(:,3), 'b');
+        xlabel('sample');
+        ylabel('degPersec');
+        title(strcat('Participant-', int2str(f), ' , Day-', int2str(Days_labeling{ids(f)}(g))));
+        legend('X', 'Y', 'Z'); 
+
+        if predictedLabels
+            vline(predictedLabels, color);
+        end
+        if testLabels
+            vline(lineInd,'r', region_names_new);
+        end
+        
+        %Show Dean test labels
+        if testLabels_time
+            vline(pred_t_samp ,'c', region_names_new);
+        end
+    end
+    
+    if maggraph == true
+        figure('NumberTitle', 'off', 'Name', 'Raw Magnetometer');
+        hold on;
+        plot(mag(:,1), 'r');
+        plot(mag(:,2), 'g');
+        plot(mag(:,3), 'b');
+        xlabel('sample');
+        ylabel('wb/m2');
+        title(strcat('Participant-', int2str(f), ' , Day-', int2str(Days_labeling{ids(f)}(g))));
+        legend('X', 'Y', 'Z');
+
+
+        if predictedLabels
+        vline(predictedLabels, color);
+        end
+        if testLabels
+        vline(lineInd,'r', region_names_new);
+        end
+        %Show Dean test labels
+        if testLabels_time
+            vline(pred_t_samp ,'c', region_names_new);
+        end
+    end
+    
+    
+    end
 end
+
+%% Brushing Status
+acc_x = acc(:,1);
+pxx = pyulear(acc_x,10);
+
+
